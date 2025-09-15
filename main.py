@@ -1648,7 +1648,6 @@ class FitnessBot:
 
             await message.answer(
                 f"💪 Тренировка начата!\n"
-                f"🆔 ID: {workout_id}\n"
                 f"⏰ Время начала: {datetime.now().strftime('%H:%M')}\n\n"
                 "📝 Добавляйте подходы командой /add или просто отправьте сообщение:\n"
                 "• Жим лёжа 60 кг 5 подходов по 8 раз\n"
@@ -2856,7 +2855,6 @@ class FitnessBot:
 
             await callback_query.message.edit_text(
                 f"💪 Тренировка начата!\n"
-                f"🆔 ID: {workout_id}\n"
                 f"⏰ Время начала: {datetime.now().strftime('%H:%M')}\n\n"
                 "📝 Добавляйте подходы командой /add или просто отправьте сообщение:\n"
                 "• Жим лёжа 60 кг 5 подходов по 8 раз\n"
