@@ -617,12 +617,27 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT workout_id FROM workouts 
+                SELECT workout_id FROM workouts
                 WHERE tg_user_id = ? AND dt_end IS NULL
                 ORDER BY dt_start DESC LIMIT 1
-            """, (tg_user_id, ))
+                """, (tg_user_id, ))
             row = cursor.fetchone()
             return row[0] if row else None
+
+    def get_workout_sets(self, workout_id: str) -> List[Dict]:
+        """Get all sets for a specific workout"""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT exercise, weight, reps, set_idx, rpe, comment
+                FROM sets
+                WHERE workout_id = ?
+                ORDER BY set_idx
+                """, (workout_id, ))
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
 
     def get_weekly_stats(self,
                          tg_user_id: int,
@@ -1535,6 +1550,7 @@ class FitnessBot:
                 # Show enhanced welcome for existing users
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="🏋️ Начать тренировку", callback_data="start_workout")],
+                    [InlineKeyboardButton(text="👀 Моя тренировка", callback_data="view_workout")],
                     [InlineKeyboardButton(text="📊 Недельный отчет", callback_data="weekly_report")],
                     [InlineKeyboardButton(text="🎯 Создать новую программу", callback_data="create_program")],
                     [InlineKeyboardButton(text="⚙️ Настройки", callback_data="settings")]
@@ -1819,6 +1835,10 @@ class FitnessBot:
             if data == "start_workout":
                 logger.info(f"Starting workout via callback for user {tg_user_id}")
                 await self.start_workout_callback(callback_query)
+                return
+            elif data == "view_workout":
+                logger.info(f"Showing current workout via callback for user {tg_user_id}")
+                await self.show_current_workout_callback(callback_query)
                 return
             elif data == "weekly_report":
                 logger.info(f"Showing weekly report via callback for user {tg_user_id}")
@@ -2846,6 +2866,56 @@ class FitnessBot:
         except Exception as e:
             logger.error(f"Error in start_workout_callback for user {tg_user_id}: {e}")
             await callback_query.message.edit_text(f"❌ Произошла ошибка при создании тренировки: {e}")
+
+    async def show_current_workout_callback(self, callback_query: types.CallbackQuery):
+        """Show current active workout"""
+        if not callback_query.from_user:
+            await callback_query.answer("❌ Не удалось определить пользователя.")
+            return
+
+        tg_user_id = callback_query.from_user.id
+        logger.info(f"User {tg_user_id} requested current workout view")
+
+        try:
+            workout_id = self.db.get_active_workout(tg_user_id)
+            if not workout_id:
+                await callback_query.message.edit_text("⚠️ У вас нет активной тренировки.")
+                return
+
+            sets = self.db.get_workout_sets(workout_id)
+            if not sets:
+                await callback_query.message.edit_text("📭 В текущей тренировке пока нет подходов.")
+                return
+
+            user = self.db.get_user(tg_user_id)
+            unit = user.get('unit', 'kg') if user else 'kg'
+
+            sets_summary = []
+            current_exercise = None
+            exercise_sets = []
+
+            for s in sets:
+                if current_exercise != s['exercise']:
+                    if exercise_sets:
+                        sets_summary.append(f"{current_exercise}: {', '.join(exercise_sets)}")
+                        exercise_sets = []
+                    current_exercise = s['exercise']
+
+                set_str = f"{s['weight']}{unit}×{s['reps']}"
+                if s.get('rpe'):
+                    set_str += f"@{s['rpe']}"
+                exercise_sets.append(set_str)
+
+            if exercise_sets:
+                sets_summary.append(f"{current_exercise}: {', '.join(exercise_sets)}")
+
+            await callback_query.message.edit_text(
+                "💪 Текущая тренировка:\n\n" + "\n".join(sets_summary)
+            )
+
+        except Exception as e:
+            logger.error(f"Error in show_current_workout_callback for user {tg_user_id}: {e}")
+            await callback_query.message.edit_text(f"❌ Ошибка: {e}")
 
     async def show_weekly_report_callback(self, callback_query: types.CallbackQuery):
         """Show weekly report via callback"""
