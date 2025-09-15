@@ -1,0 +1,9 @@
+aiogram==3.*
+apscheduler
+python-dateutil
+pandas
+python-dotenv
+openai
+pytz
+gspread
+oauth2client
