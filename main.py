@@ -168,7 +168,7 @@ def calculate_tonnage_by_groups(db_path: str, tg_user_id: int, weeks_back: int =
     from datetime import datetime, timedelta
     
     # Calculate calendar week boundaries (Monday to Sunday)
-    today = datetime.now()
+    today = datetime.now(timezone(DEFAULT_TIMEZONE))
     # Get Monday of the current week
     current_week_start = today - timedelta(days=today.weekday())
     # Go back the specified number of weeks
@@ -225,7 +225,7 @@ def calculate_exercise_tonnage(db_path: str, tg_user_id: int, days_back: int = 7
     import sqlite3
     from datetime import datetime, timedelta
     
-    end_date = datetime.now()
+    end_date = datetime.now(timezone(DEFAULT_TIMEZONE))
     start_date = end_date - timedelta(days=days_back)
     
     with sqlite3.connect(db_path) as conn:
@@ -630,7 +630,7 @@ class DatabaseManager:
         """Get weekly training statistics"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            end_date = datetime.now()
+            end_date = datetime.now(timezone(DEFAULT_TIMEZONE))
             start_date = end_date - timedelta(weeks=weeks_back)
 
             cursor.execute(
@@ -657,13 +657,14 @@ class DatabaseManager:
     
     def create_workout_program(self, tg_user_id: int, program_data: str, name: str, description: str) -> str:
         """Create a new workout program"""
-        program_id = f"prog_{tg_user_id}_{int(datetime.now().timestamp())}"
+        now = datetime.now(timezone(DEFAULT_TIMEZONE))
+        program_id = f"prog_{tg_user_id}_{int(now.timestamp())}"
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO workout_programs (id, tg_user_id, program_data, created_at, name, description)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (program_id, tg_user_id, program_data, datetime.now().isoformat(), name, description))
+            """, (program_id, tg_user_id, program_data, now.isoformat(), name, description))
             conn.commit()
         return program_id
     
@@ -689,18 +690,19 @@ class DatabaseManager:
             cursor.execute("""
                 INSERT INTO workout_timer (tg_user_id, workout_id, timer_start, timer_duration_min)
                 VALUES (?, ?, ?, ?)
-            """, (tg_user_id, workout_id, datetime.now().isoformat(), duration_min))
+            """, (tg_user_id, workout_id, datetime.now(timezone(DEFAULT_TIMEZONE)).isoformat(), duration_min))
             conn.commit()
     
     def check_expired_timers(self) -> List[Dict]:
         """Check for expired workout timers"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
+            now = datetime.now(timezone(DEFAULT_TIMEZONE)).isoformat()
             cursor.execute("""
-                SELECT * FROM workout_timer 
-                WHERE notification_sent = 0 
-                AND datetime(timer_start, '+' || timer_duration_min || ' minutes') <= datetime('now')
-            """)
+                SELECT * FROM workout_timer
+                WHERE notification_sent = 0
+                AND datetime(timer_start, '+' || timer_duration_min || ' minutes') <= datetime(?)
+            """, (now,))
             rows = cursor.fetchall()
             return [{
                 'id': r[0], 'tg_user_id': r[1], 'workout_id': r[2], 
@@ -1297,7 +1299,7 @@ class FitnessBot:
             cursor = conn.cursor()
             
             # Get this calendar week's sets (Monday to Sunday)
-            today = datetime.now()
+            today = datetime.now(timezone(DEFAULT_TIMEZONE))
             week_start = today - timedelta(days=today.weekday())
             cursor.execute("""
                 SELECT s.exercise, s.weight, s.reps, w.dt_start
@@ -1361,7 +1363,7 @@ class FitnessBot:
                 cursor = conn.cursor()
                 
                 # Get current week start (Monday)
-                today = datetime.now()
+                today = datetime.now(timezone(DEFAULT_TIMEZONE))
                 current_week_start = today - timedelta(days=today.weekday())
                 
                 # Get sum of training_load for previous 3 complete weeks
@@ -1372,7 +1374,7 @@ class FitnessBot:
                     AND date(week_start) < date(?)
                     ORDER BY week_start DESC
                     LIMIT 3
-                """, (tg_user_id, current_week_start.strftime('%Y-%m-%d')))
+                """, (tg_user_id, current_week_start.astimezone(timezone(DEFAULT_TIMEZONE)).strftime('%Y-%m-%d')))
                 
                 result = cursor.fetchone()
                 prev_3_weeks_total = result[0] if result and result[0] else 0
@@ -1623,8 +1625,9 @@ class FitnessBot:
                 return
 
             # Create new workout
-            workout_id = f"w_{tg_user_id}_{int(datetime.now().timestamp())}"
-            dt_start = datetime.now().isoformat()
+            dt_now = datetime.now(timezone(DEFAULT_TIMEZONE))
+            workout_id = f"w_{tg_user_id}_{int(dt_now.timestamp())}"
+            dt_start = dt_now.isoformat()
             logger.info(f"Creating workout: {workout_id}")
 
             self.db.create_workout(workout_id, tg_user_id, dt_start)
@@ -1633,7 +1636,7 @@ class FitnessBot:
             await message.answer(
                 f"💪 Тренировка начата!\n"
                 f"🆔 ID: {workout_id}\n"
-                f"⏰ Время начала: {datetime.now().strftime('%H:%M')}\n\n"
+                f"⏰ Время начала: {dt_now.astimezone(timezone(DEFAULT_TIMEZONE)).strftime('%H:%M')}\n\n"
                 "📝 Добавляйте подходы командой /add или просто отправьте сообщение:\n"
                 "• Жим лёжа 60 кг 5 подходов по 8 раз\n"
                 "• Bench 60x5x3@8\n"
@@ -2827,8 +2830,9 @@ class FitnessBot:
                 return
 
             # Create new workout
-            workout_id = f"w_{tg_user_id}_{int(datetime.now().timestamp())}"
-            dt_start = datetime.now().isoformat()
+            dt_now = datetime.now(timezone(DEFAULT_TIMEZONE))
+            workout_id = f"w_{tg_user_id}_{int(dt_now.timestamp())}"
+            dt_start = dt_now.isoformat()
             logger.info(f"Creating workout: {workout_id}")
 
             self.db.create_workout(workout_id, tg_user_id, dt_start)
@@ -2837,7 +2841,7 @@ class FitnessBot:
             await callback_query.message.edit_text(
                 f"💪 Тренировка начата!\n"
                 f"🆔 ID: {workout_id}\n"
-                f"⏰ Время начала: {datetime.now().strftime('%H:%M')}\n\n"
+                f"⏰ Время начала: {dt_now.astimezone(timezone(DEFAULT_TIMEZONE)).strftime('%H:%M')}\n\n"
                 "📝 Добавляйте подходы командой /add или просто отправьте сообщение:\n"
                 "• Жим лёжа 60 кг 5 подходов по 8 раз\n"
                 "• Bench 60x5x3@8\n"
@@ -2888,7 +2892,7 @@ class FitnessBot:
 
         try:
             # Finish workout in database
-            dt_end = datetime.now().isoformat()
+            dt_end = datetime.now(timezone(DEFAULT_TIMEZONE)).isoformat()
             self.db.finish_workout(workout_id, dt_end, srpe, mood, sleep)
 
             # Get workout data for analysis
@@ -3009,8 +3013,9 @@ class FitnessBot:
             health_flags = self.get_health_flags(tg_user_id, weekly_stats, total_load)
 
             # Format enhanced report
-            week_start = datetime.now() - timedelta(days=datetime.now().weekday())
-            report = f"📊 Недельный отчет ({week_start.strftime('%d.%m')} - {datetime.now().strftime('%d.%m')})\n\n"
+            now = datetime.now(timezone(DEFAULT_TIMEZONE))
+            week_start = now - timedelta(days=now.weekday())
+            report = f"📊 Недельный отчет ({week_start.astimezone(timezone(DEFAULT_TIMEZONE)).strftime('%d.%m')} - {now.astimezone(timezone(DEFAULT_TIMEZONE)).strftime('%d.%m')})\n\n"
             
             # Basic stats
             report += f"🏋️ Тренировок: {total_workouts}\n"
@@ -3064,7 +3069,7 @@ class FitnessBot:
                     """,
                         (
                             tg_user_id,
-                            week_start.strftime('%Y-%m-%d'),
+                            week_start.astimezone(timezone(DEFAULT_TIMEZONE)).strftime('%Y-%m-%d'),
                             total_workouts,
                             total_tonnage,
                             round(avg_srpe, 1),
@@ -3107,7 +3112,7 @@ class FitnessBot:
             workout_link = active_workout if active_workout else ""
 
             # Store voice note in database
-            dt_now = datetime.now().isoformat()
+            dt_now = datetime.now(timezone(DEFAULT_TIMEZONE)).isoformat()
             voice_content = f"Voice note: {duration}s, {file_size} bytes, ID: {voice_id}"
 
             # Save to database
@@ -3535,8 +3540,8 @@ class FitnessBot:
                 logger.info(f"User {tg_user_id} already has active workout, skipping reminder")
                 return
             
-            current_time = datetime.now()
-            current_day = current_time.strftime('%A')
+            current_time = datetime.now(timezone(DEFAULT_TIMEZONE))
+            current_day = current_time.astimezone(timezone(DEFAULT_TIMEZONE)).strftime('%A')
             
             await self.bot.send_message(
                 tg_user_id,
@@ -3656,8 +3661,8 @@ class FitnessBot:
         backup_dir = os.environ.get('BACKUP_DIR', DEFAULT_BACKUP_DIR)
 
         try:
-            backup_path = Path(backup_dir) / datetime.now().strftime(
-                '%Y-%m-%d')
+            now = datetime.now(timezone(DEFAULT_TIMEZONE))
+            backup_path = Path(backup_dir) / now.astimezone(timezone(DEFAULT_TIMEZONE)).strftime('%Y-%m-%d')
             backup_path.mkdir(parents=True, exist_ok=True)
 
             with sqlite3.connect(self.db.db_path) as conn:
