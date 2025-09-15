@@ -1,166 +1,288 @@
-# Fitness Logger Telegram Bot
+# Fitness Logger Telegram Bot (SQL backend)
 
-A comprehensive Telegram bot for tracking workouts with Google Sheets integration, automated scheduling, and intelligent training recommendations.
+A comprehensive Telegram bot for tracking workouts with an **SQL database backend**, automated scheduling, and intelligent, health‑aware training recommendations.
+
+## What changed vs Google Sheets
+
+* ✅ Replaced Google Sheets with **SQL storage** (SQLite by default; PostgreSQL/MySQL via `DATABASE_URL`).
+* ✅ Added **schema & migrations**.
+* ✅ Built‑in **backups** (SQL dumps + CSV exports).
+* ✅ Sample **SQL views/queries** for weekly reports and per‑muscle‑group tonnage.
+
+---
 
 ## Features
 
-- 🏋️ **Workout Tracking**: Start workouts with `/train`, add sets with flexible parsing, finish with sRPE/mood/sleep feedback
-- 📊 **Google Sheets Integration**: Personal spreadsheet per user with automatic data sync
-- 🤖 **Smart Recommendations**: Training load analysis and automatic workout recommendations
-- 📅 **Automated Scheduling**: Weekly reports every Sunday 20:00 and daily backups at 02:30 UTC
-- 🎤 **Voice Notes**: Transcription storage (expandable for future Whisper integration)
-- 📈 **Progress Analysis**: Weekly statistics, tonnage calculation, and overload detection
+* 🏋️ **Workout Tracking**: `/train` → add sets (flexible parsing) → `/finish` with sRPE/mood/sleep.
+* 🧠 **Health‑Aware Recommendations**: adapts to injuries/limitations (e.g., shoulder issues → remove/modify OHP/bench variants).
+* 📈 **Progress Analysis**: weekly stats, **tonnage per muscle group**, overload detection.
+* 📅 **Automated Scheduling**: Weekly report every Sunday 20:00 (Europe/Amsterdam) and daily backups at 02:30 UTC.
+* 🎤 **Voice Notes**: stores transcriptions.
+* 🗄️ **SQL Backend**: SQLite for quick start; bring your own Postgres/MySQL with `DATABASE_URL`.
+
+---
 
 ## Quick Start on Replit
 
-### 1. Add Required Secrets
+### 1) Secrets / Environment
 
-Go to **Tools → Secrets** in your Replit and add:
+Required:
 
-#### `TELEGRAM_BOT_TOKEN`
-1. Message [@BotFather](https://t.me/botfather) on Telegram
-2. Send `/newbot` and follow the instructions
-3. Copy the bot token and paste it here
+* `TELEGRAM_BOT_TOKEN` — your bot token from @BotFather.
 
-#### `SERVICE_ACCOUNT_JSON`
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project or select existing one
-3. Enable Google Sheets API and Google Drive API
-4. Create a service account:
-   - Go to **IAM & Admin → Service Accounts**
-   - Click **Create Service Account**
-   - Give it a name (e.g., "fitness-bot")
-   - Click **Create and Continue**
-   - Skip role assignment and click **Done**
-5. Create a key:
-   - Click on your service account
-   - Go to **Keys** tab
-   - Click **Add Key → Create new key**
-   - Choose **JSON** format
-   - Download the file
-6. Copy the **entire contents** of the JSON file and paste it as the value
+Optional (for external DBs):
 
-### 2. Run the Bot
+* `DATABASE_URL` — e.g. `postgresql+psycopg://user:pass@host:5432/dbname` or `mysql+pymysql://...`
 
-Simply click the **▶️ Run** button in Replit!
+  * If **not** set, the bot uses local **SQLite** at `fitness_bot.db`.
+* `BACKUP_DIR` — defaults to `backups/`.
 
-The bot will:
-- Start a keep-alive HTTP server on the configured port
-- Initialize the SQLite database
-- Connect to Google Sheets
-- Begin polling for Telegram messages
+### 2) Run the Bot
 
-### 3. Test Your Bot
+Click **▶️ Run** in Replit. The bot will:
 
-1. Find your bot on Telegram (search for the name you gave it)
-2. Send `/start` to create your personal fitness spreadsheet
-3. Try the workflow:
-   ```
-   /start          # Create account and spreadsheet
-   /train          # Start a workout
-   /add Bench 60x5x3  # Add sets (flexible format)
-   /finish         # Complete workout with feedback
-   /week           # View weekly report
-   ```
+* Initialize the database (create tables/migrations if missing)
+* Start a small keep‑alive web server
+* Begin Telegram polling
+* Schedule cron jobs (weekly report, daily backups)
+
+### 3) Test Workflow
+
+```
+/start
+/train
+/add Bench 60x5x3
+/finish
+/week
+```
+
+---
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `/start` | Create account and personal Google Sheets |
-| `/train` | Start a new workout session |
-| `/add <sets>` | Add sets to current workout |
-| `/finish` | Complete workout with sRPE/mood/sleep rating |
-| `/week` | Generate weekly progress report |
+| Command   | Description                             |
+| --------- | --------------------------------------- |
+| `/start`  | Register user and initialize DB profile |
+| `/train`  | Start a workout session                 |
+| `/add`    | Add sets (e.g., `Squat 100x5x3@7`)      |
+| `/finish` | Finish workout with sRPE / mood / sleep |
+| `/week`   | Weekly report (incl. per‑group tonnage) |
 
-## Set Format Examples
-
-The bot accepts multiple formats for adding sets:
+### Set Format Examples
 
 ```
-Bench 60x5x3        # Exercise, weight×reps×sets
-Жим 80x3@8          # Russian names, weight×reps@RPE
-Deadlift 120x5      # Single set
-Squat 100x3x5@7     # Multiple sets with RPE
+Bench 60x5x3        # weight × reps × sets
+Жим 80x3@8          # Russian names + RPE
+Deadlift 120x5      # single set
+Squat 100x3x5@7     # multiple sets + RPE
 ```
 
-### Supported Exercises (Russian/English)
-- Жим / Bench → Bench Press
-- Присед / Squat → Squat  
-- Тяга / Deadlift → Deadlift
-- Жим стоя / OHP → Overhead Press
+Supported exercises (EN/RU):
 
-## Google Sheets Structure
+* Жим / Bench → Bench Press
+* Присед / Squat → Squat
+* Тяга / Deadlift → Deadlift
+* Жим стоя / OHP → Overhead Press
 
-Your personal spreadsheet contains 5 sheets:
+---
 
-1. **Workouts**: Date, program, duration, sRPE, mood, sleep, training load
-2. **Sets**: Individual set data with exercise, weight, reps, RPE
-3. **PRs**: Personal records tracking
-4. **Weekly**: Weekly summary statistics
-5. **Notes**: Voice transcriptions and workout notes
+## Database
 
-## Automated Features
+### Engines
 
-- **Weekly Reports**: Every Sunday 20:00 (Europe/Amsterdam timezone)
-- **Daily Backups**: Every day at 02:30 UTC, exports sheets to CSV
-- **Training Load Analysis**: Compares weekly load vs 4-week average
-- **Smart Recommendations**: Based on sRPE, sleep quality, and load patterns
+* **SQLite** (default): no config needed, dev‑friendly.
+* **PostgreSQL/MySQL**: set `DATABASE_URL`.
+
+### Schema (simplified)
+
+```sql
+-- users
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,           -- UUID if using Postgres
+  tg_user_id TEXT UNIQUE NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  age INTEGER, height_cm INTEGER, weight_kg REAL,
+  training_time TEXT,                             -- preferred HH:MM (optional)
+  health_limits TEXT                              -- free text: e.g., "shoulder pain"
+);
+
+-- workouts
+CREATE TABLE IF NOT EXISTS workouts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  started_at TIMESTAMP NOT NULL,
+  finished_at TIMESTAMP,
+  program TEXT,
+  srpe REAL, mood INTEGER, sleep_hours REAL
+);
+
+-- sets
+CREATE TABLE IF NOT EXISTS sets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workout_id INTEGER NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
+  exercise TEXT NOT NULL,
+  weight REAL NOT NULL,
+  reps INTEGER NOT NULL,
+  rpe REAL,
+  muscle_group TEXT NOT NULL,        -- derived mapping, e.g., "chest", "legs", "back", "shoulders"
+  tonnage AS (weight * reps) STORED  -- if engine supports generated columns; else compute in queries
+);
+
+-- prs
+CREATE TABLE IF NOT EXISTS prs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  exercise TEXT NOT NULL,
+  weight REAL NOT NULL,
+  reps INTEGER NOT NULL,
+  achieved_at TIMESTAMP NOT NULL
+);
+
+-- notes (voice/text)
+CREATE TABLE IF NOT EXISTS notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  workout_id INTEGER REFERENCES workouts(id) ON DELETE SET NULL,
+  kind TEXT CHECK (kind IN ('voice','text')) NOT NULL,
+  content TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### Indices
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_sets_workout_id ON sets(workout_id);
+CREATE INDEX IF NOT EXISTS idx_workouts_user_started ON workouts(user_id, started_at);
+CREATE INDEX IF NOT EXISTS idx_prs_user_exercise ON prs(user_id, exercise);
+```
+
+### Muscle Group Mapping
+
+Mapping occurs in code when parsing `/add`, e.g.:
+
+* Bench/Жим → `chest`
+* Squat/Присед → `legs`
+* Deadlift/Тяга → `back`
+* OHP/Жим стоя → `shoulders`
+
+You can extend this dictionary for more exercises.
+
+### Views & Reports (examples)
+
+**Weekly tonnage per muscle group**:
+
+```sql
+-- for a given user and ISO week
+CREATE VIEW IF NOT EXISTS v_weekly_group_tonnage AS
+SELECT
+  u.id AS user_id,
+  strftime('%Y-%W', w.started_at) AS iso_week,      -- SQLite; use DATE_TRUNC('week', ...) on Postgres
+  s.muscle_group,
+  SUM(s.weight * s.reps) AS tonnage
+FROM sets s
+JOIN workouts w ON w.id = s.workout_id
+JOIN users u ON u.id = w.user_id
+GROUP BY 1,2,3;
+```
+
+**Overload detection (rolling 4‑week avg vs current week)**:
+
+```sql
+-- Example query (SQLite). Adapt for Postgres window functions for efficiency.
+-- current week tonnage per group
+WITH current AS (
+  SELECT user_id, iso_week, muscle_group, tonnage
+  FROM v_weekly_group_tonnage
+  WHERE iso_week = strftime('%Y-%W', 'now')
+),
+last4 AS (
+  SELECT a.user_id, a.muscle_group,
+         AVG(b.tonnage) AS avg_4w
+  FROM v_weekly_group_tonnage a
+  JOIN v_weekly_group_tonnage b
+    ON a.user_id = b.user_id AND a.muscle_group = b.muscle_group
+  WHERE b.iso_week >= strftime('%Y-%W', date('now','-28 day'))
+    AND b.iso_week <  strftime('%Y-%W', 'now')
+  GROUP BY 1,2
+)
+SELECT c.user_id, c.muscle_group, c.tonnage AS current_week,
+       l.avg_4w,
+       CASE WHEN c.tonnage > l.avg_4w * 1.2 THEN 1 ELSE 0 END AS overload_flag
+FROM current c
+LEFT JOIN last4 l USING (user_id, muscle_group);
+```
+
+---
+
+## Backups & Maintenance
+
+* **Daily backups (02:30 UTC)**:
+
+  * SQLite: copy `fitness_bot.db` to `backups/fitness_bot_YYYYMMDD.db` and export CSVs (`users.csv`, `workouts.csv`, `sets.csv`, `prs.csv`, `notes.csv`).
+  * External DB: run `pg_dump` / `mysqldump` (if available in environment), plus CSV exports via code.
+* **Weekly reports (Sun 20:00 Europe/Amsterdam)**: bot computes stats and sends a summary.
+* **Migrations**: simple `schema.sql` applied at startup; optional migration runner for future changes.
+
+---
+
+## Health‑Aware Logic (summary)
+
+* If a user reports `shoulder` issues → OHP/bench variants are replaced by safer alternatives (e.g., incline DB press light, machine press, neutral‑grip). Loads are reduced and RPE caps are applied.
+* Sleep/mood/sRPE influence load progression and deload suggestions.
+
+---
 
 ## Troubleshooting
 
-### Bot doesn't respond
-1. Check that `TELEGRAM_BOT_TOKEN` is correctly set
-2. Verify the bot token is valid in BotFather
-3. Check the console logs for errors
+**Bot doesn’t respond**
 
-### Google Sheets errors
-1. Run the test script: `python test_gsheets.py`
-2. Verify `SERVICE_ACCOUNT_JSON` contains valid JSON
-3. Check that Google Sheets API and Drive API are enabled
-4. Ensure the service account key hasn't expired
+1. Verify `TELEGRAM_BOT_TOKEN`.
+2. Check Replit logs for exceptions.
 
-### Spreadsheet access
-To view your spreadsheet in Google Sheets:
-1. Copy the service account email from the JSON (looks like `xyz@project.iam.gserviceaccount.com`)
-2. Share your spreadsheet with this email address
-3. Or the bot automatically makes sheets publicly viewable
+**Database issues**
 
-## Security Notes
+* SQLite lock errors → avoid concurrent writes; ensure one bot instance.
+* Postgres/MySQL → verify `DATABASE_URL` and network access.
+* Run a DB connectivity self‑test: `python test_db.py` (provided).
 
-- **Never commit secrets**: Bot tokens and service account keys should only be in Replit Secrets
-- **Rotate keys regularly**: If keys are compromised, revoke them immediately
-- **Monitor access**: Check your Google Cloud console for unusual API usage
+**Backups**
+
+* Ensure `backups/` exists or set `BACKUP_DIR`.
+* For Postgres/MySQL, confirm dump utilities are available or rely on CSV exports.
+
+---
 
 ## File Structure
 
 ```
 fitness-bot/
-├── main.py              # Main bot application
-├── requirements.txt     # Python dependencies  
-├── test_gsheets.py     # Google Sheets test script
-├── README.md           # This file
-├── fitness_bot.db      # SQLite database (auto-created)
-└── backups/            # CSV backups (auto-created)
+├── main.py                 # Bot entrypoint (aiogram)
+├── db/
+│   ├── schema.sql          # Canonical schema
+│   ├── migrations/         # (optional) future migrations
+│   └── utils.py            # DB helpers/queries
+├── test_db.py              # Connectivity & schema smoke tests
+├── requirements.txt        # Python deps
+├── README.md               # This file
+├── fitness_bot.db          # SQLite database (auto‑created if no DATABASE_URL)
+└── backups/                # SQL dumps / CSV exports (auto‑created)
 ```
 
-## Development
+## Tech Stack
 
-The bot uses:
-- **aiogram 3.x**: Modern async Telegram bot framework
-- **gspread**: Google Sheets Python API
-- **APScheduler**: Automated task scheduling
-- **SQLite**: Local database for fast queries
-- **pandas**: Data analysis and CSV export
-
-## Support
-
-If you encounter issues:
-1. Check the console logs in Replit
-2. Run `python test_gsheets.py` to test Google Sheets connectivity
-3. Verify all secrets are properly configured
-4. Check that your Telegram bot token is valid
+* **aiogram 3.x** — Telegram framework
+* **SQLAlchemy** (recommended) or `sqlite3/psycopg/pymysql` — DB access
+* **APScheduler** — scheduling
+* **pandas** — analytics & CSV export
 
 ---
 
-**Ready to start logging your fitness journey! 💪**
+## Migration from Google Sheets (optional)
+
+If you have existing CSV exports from Sheets:
+
+1. Place `users.csv`, `workouts.csv`, `sets.csv`, `prs.csv`, `notes.csv` into `backups/import/`.
+2. Run `python tools/import_csv.py` (script maps columns to schema and inserts rows idempotently).
+3. Verify counts with `python test_db.py`.
+
